@@ -10,9 +10,12 @@ import (
 // observable Claude Code tool definitions and system prompt contents
 // as of early 2025. They change between Claude Code versions.
 //
-// This is not an exact measurement — Claude Code's internals are not
-// public. These are conservative lower-bound estimates based on the
-// tool descriptions and system prompt visible in Claude Code sessions.
+// NOT live-validated. These are manual estimates from session transcripts
+// using ~4 bytes/token. Live calibration (benchmarks/live_test.go) shows
+// the bytes/4 heuristic underestimates Claude's tokenizer by ~31%, so
+// actual baseline may be higher. We cannot measure the real Claude Code
+// baseline via count_tokens because we don't have the exact tool schemas
+// Claude Code sends internally.
 type ClaudeCodeBaseline struct {
 	// Per-tool token estimates (from observable Claude Code tool definitions).
 	// Claude Code's built-in tools have much longer descriptions than the
@@ -39,6 +42,8 @@ func EstimateClaudeCodeBaseline() *ClaudeCodeBaseline {
 	//
 	// Method: measured tool descriptions from Claude Code session transcripts,
 	// estimated at ~4 bytes/token for the description text.
+	// Caveat: bytes/4 underestimates Claude's tokenizer by ~31% (see
+	// LiveCorrectionFactor). Actual per-tool costs may be ~1.3x higher.
 	tools := map[string]int{
 		"Read":             200,  // File reading with offset/limit params, usage rules
 		"Write":            200,  // File writing with overwrite warning, usage rules

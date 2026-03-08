@@ -15,18 +15,39 @@ type TokenCounter interface {
 	Name() string
 }
 
+// LiveCorrectionFactor is the average ratio of Claude's actual token count
+// to the bytes/4 heuristic, derived from live calibration against the
+// Anthropic count_tokens API across 5 community agents.
+//
+// The bytes/4 heuristic underestimates Claude's tokenizer by ~31%.
+// Multiply heuristic estimates by this factor for calibrated results.
+const LiveCorrectionFactor = 1.31
+
 // BytesEstimator estimates tokens using the bytes/4 heuristic.
-// Fast and dependency-free, but overestimates compression of structured text
-// like JSON schemas. Useful for relative comparisons.
+// Fast and dependency-free. Underestimates Claude's actual token count
+// by ~31% (see LiveCorrectionFactor). Use CorrectedEstimator for
+// calibrated results.
 type BytesEstimator struct{}
 
 func (BytesEstimator) Count(s string) int { return (len(s) + 3) / 4 }
 func (BytesEstimator) Name() string       { return "bytes/4" }
 
+// CorrectedEstimator applies the live-calibrated correction factor to
+// the bytes/4 heuristic. This is the recommended offline estimator —
+// it closely matches Claude's actual tokenizer without requiring an API key.
+type CorrectedEstimator struct{}
+
+func (CorrectedEstimator) Count(s string) int {
+	raw := (len(s) + 3) / 4
+	return int(float64(raw)*LiveCorrectionFactor + 0.5)
+}
+func (CorrectedEstimator) Name() string { return "bytes/4 * 1.31 (calibrated)" }
+
 // BPECounter counts tokens using tiktoken's cl100k_base encoding.
-// This is the BPE tokenizer used by GPT-4 and is a reasonable proxy for
-// Claude's tokenizer. Not exact, but much more accurate than bytes/4 for
-// structured text like JSON schemas.
+// This is the BPE tokenizer used by GPT-4. Despite being a real tokenizer,
+// it is a poor proxy for Claude's tokenizer — it underestimates Claude's
+// token count by ~67%. The bytes/4 heuristic (31% under) is paradoxically
+// more accurate. Kept for comparison purposes.
 type BPECounter struct {
 	enc *tiktoken.Tiktoken
 }

@@ -708,6 +708,177 @@ func TestArticleMethodology(t *testing.T) {
 
 // --- Test: GeneratePlatformTools ---
 
+// ==========================================================================
+// Skills vs Sub-agents vs Agentfile benchmarks
+// ==========================================================================
+
+// --- Test: Skills Comparison ---
+
+func TestSkillsComparison(t *testing.T) {
+	// Measure a real community agent.
+	communityDir := filepath.Join("testdata", "community")
+	entries, err := os.ReadDir(communityDir)
+	if err != nil {
+		t.Fatalf("reading community dir: %v", err)
+	}
+
+	// Use the first community agent as representative.
+	var agentDef *definition.AgentDef
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(communityDir, entry.Name())
+		agentDef, err = definition.ParseAgentMD(path)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", entry.Name(), err)
+		}
+		break
+	}
+	if agentDef == nil {
+		t.Fatal("no community agent found")
+	}
+
+	// Measure the agent's actual cost.
+	toolDefs, err := builtins.ForNames(agentDef.Tools)
+	if err != nil {
+		t.Fatalf("resolving tools for %s: %v", agentDef.Name, err)
+	}
+	m := benchmarks.MeasureTools(toolDefs)
+	promptTokens := benchmarks.EstimateTokens(agentDef.PromptBody)
+
+	agentfileCost := benchmarks.AgentfileCost{
+		Name:            agentDef.Name,
+		ToolTokens:      m.SchemaTokens,
+		PromptTokens:    promptTokens,
+		TotalTokens:     m.SchemaTokens + promptTokens,
+		HasTools:        true,
+		HasMemory:       true,
+		HasVersioning:   true,
+		HasDistribution: true,
+	}
+
+	skillCost := benchmarks.EstimateSkillCost("equivalent-skill", benchmarks.DefaultSkillTiers())
+	cmp := benchmarks.CompareSkillsVsAgentfile(skillCost, &agentfileCost)
+
+	t.Log("\n" + benchmarks.FormatSkillsComparison(cmp))
+
+	// Verify: Agentfile token cost is in the same order of magnitude as loaded skill (within 3x).
+	if cmp.TokenRatio > 3.0 {
+		t.Errorf("Agentfile costs %.1fx a loaded skill — expected within 3x", cmp.TokenRatio)
+	}
+	t.Logf("Agentfile costs %.1fx a loaded skill (same order of magnitude)", cmp.TokenRatio)
+
+	// Verify: Agentfile has capabilities skills lack.
+	if len(cmp.FeatureDelta) < 3 {
+		t.Errorf("expected at least 3 feature advantages, got %d", len(cmp.FeatureDelta))
+	}
+	t.Logf("Agentfile adds %d capabilities over skills: %v", len(cmp.FeatureDelta), cmp.FeatureDelta)
+}
+
+// --- Test: Sub-Agent Cost Model ---
+
+func TestSubAgentCostModel(t *testing.T) {
+	// Build a representative 10-tool agent.
+	focusedTools := benchmarks.MeasureTools(benchmarks.GenerateTools(10))
+	promptTokens := 845 // from testdata prompt size
+
+	inv := benchmarks.EstimateSubAgentInvocation(focusedTools.SchemaTokens, promptTokens)
+	t.Log("\n" + benchmarks.FormatSubAgentBreakdown(inv))
+
+	// Project over standard invocation counts.
+	counts := benchmarks.DefaultInvocationCounts()
+	agentfilePerTurn := focusedTools.SchemaTokens + promptTokens
+
+	cmp := benchmarks.CompareSubAgentVsAgentfile(inv, agentfilePerTurn, counts)
+	t.Log("\n" + benchmarks.FormatSubAgentComparison(cmp))
+
+	// Verify: sub-agent cumulative exceeds Agentfile by >3x at 5+ invocations.
+	for _, p := range cmp.Projections {
+		if p.Invocations >= 5 && p.Ratio < 3.0 {
+			t.Errorf("at %d invocations, sub-agent should cost >3x Agentfile, got %.1fx",
+				p.Invocations, p.Ratio)
+		}
+	}
+
+	// Verify: the ratio is consistent (since both scale linearly).
+	if len(cmp.Projections) >= 2 {
+		r1 := cmp.Projections[0].Ratio
+		r2 := cmp.Projections[len(cmp.Projections)-1].Ratio
+		if r1 > 0 && r2 > 0 {
+			diff := r1 - r2
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > 0.1 {
+				t.Errorf("ratio should be constant across invocations, got %.1f and %.1f", r1, r2)
+			}
+		}
+	}
+
+	t.Logf("Sub-agent costs %.1fx Agentfile per invocation (%dT vs %dT)",
+		cmp.Projections[0].Ratio, inv.PerCallTokens, agentfilePerTurn)
+}
+
+// --- Test: Three-Way Comparison ---
+
+func TestThreeWayComparison(t *testing.T) {
+	// Use a real community agent for measured data.
+	communityDir := filepath.Join("testdata", "community")
+	entries, err := os.ReadDir(communityDir)
+	if err != nil {
+		t.Fatalf("reading community dir: %v", err)
+	}
+
+	var agentDef *definition.AgentDef
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(communityDir, entry.Name())
+		agentDef, err = definition.ParseAgentMD(path)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", entry.Name(), err)
+		}
+		break
+	}
+	if agentDef == nil {
+		t.Fatal("no community agent found")
+	}
+
+	toolDefs, err := builtins.ForNames(agentDef.Tools)
+	if err != nil {
+		t.Fatalf("resolving tools for %s: %v", agentDef.Name, err)
+	}
+	m := benchmarks.MeasureTools(toolDefs)
+	promptTokens := benchmarks.EstimateTokens(agentDef.PromptBody)
+
+	cmp := benchmarks.CompareThreeWay(m.SchemaTokens, promptTokens)
+	t.Log("\n" + benchmarks.FormatThreeWayComparison(cmp))
+	t.Log("\n" + benchmarks.FormatThreeWaySummary())
+
+	// Verify: Agentfile per-turn cost < sub-agent per-call cost.
+	if cmp.Agentfile.PerTurnCost >= cmp.SubAgent.PerTurnCost {
+		t.Errorf("Agentfile per-turn (%d) should be less than sub-agent per-call (%d)",
+			cmp.Agentfile.PerTurnCost, cmp.SubAgent.PerTurnCost)
+	}
+
+	// Verify: Agentfile has more capabilities than skills.
+	if len(cmp.Agentfile.Capabilities) <= len(cmp.Skill.Capabilities) {
+		t.Errorf("Agentfile should have more capabilities (%d) than skills (%d)",
+			len(cmp.Agentfile.Capabilities), len(cmp.Skill.Capabilities))
+	}
+
+	// Verify: Agentfile per-turn cost is in same order of magnitude as loaded skill.
+	ratio := float64(cmp.Agentfile.PerTurnCost) / float64(cmp.Skill.PerTurnCost)
+	if ratio > 3.0 {
+		t.Errorf("Agentfile per-turn (%d) should be within 3x of skill loaded (%d), got %.1fx",
+			cmp.Agentfile.PerTurnCost, cmp.Skill.PerTurnCost, ratio)
+	}
+	t.Logf("Cost ratio: Agentfile/Skill=%.1fx, SubAgent/Agentfile=%.1fx",
+		ratio, float64(cmp.SubAgent.PerTurnCost)/float64(cmp.Agentfile.PerTurnCost))
+}
+
 func TestGeneratePlatformTools(t *testing.T) {
 	for _, n := range []int{1, 10, 50, 93} {
 		defs := benchmarks.GeneratePlatformTools(n)
