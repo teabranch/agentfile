@@ -129,10 +129,20 @@ agentfile install -g github.com/owner/repo/agent-name
 
 ### Private Repositories
 
-For private repos, set the `GITHUB_TOKEN` environment variable:
+Authentication is resolved automatically in this order:
+
+1. **`GITHUB_TOKEN` env var** — checked first
+2. **`gh auth token`** — if the `gh` CLI is installed and authenticated, its token is used as a fallback
+
+This means if you can run `agentfile publish` (which requires `gh` CLI auth), you can install from private repos automatically — no extra setup needed.
 
 ```bash
+# Option 1: Explicit token
 export GITHUB_TOKEN=ghp_your_token_here
+agentfile install github.com/your-org/private-repo/agent
+
+# Option 2: gh CLI (no env var needed)
+gh auth login                    # one-time setup
 agentfile install github.com/your-org/private-repo/agent
 ```
 
@@ -274,6 +284,23 @@ agentfile update
 # Remove an agent you no longer need
 agentfile uninstall old-agent
 ```
+
+## Plugin Distribution
+
+When using `--plugin`, each agent also gets a self-contained plugin directory that can be shared:
+
+```bash
+agentfile build --plugin
+# → build/my-agent.claude-plugin/
+
+# Share the directory or archive it
+tar czf my-agent-plugin.tar.gz -C build my-agent.claude-plugin
+
+# Recipient loads it directly
+claude --plugin-dir ./my-agent.claude-plugin/
+```
+
+The plugin directory contains the binary, MCP config, and skills — everything needed to use the agent in Claude Code without any install step. See the [Plugins Guide](./plugins.md).
 
 ## Troubleshooting
 

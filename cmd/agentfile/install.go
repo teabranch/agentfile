@@ -127,7 +127,7 @@ func runRemoteInstall(ref string, global bool) error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	if err := client.DownloadAsset(ctx, asset.BrowserDownloadURL, tmpFile); err != nil {
+	if err := client.DownloadAsset(ctx, *asset, tmpFile); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("downloading: %w", err)
 	}

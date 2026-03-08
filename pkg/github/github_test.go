@@ -162,7 +162,11 @@ func TestDownloadAsset(t *testing.T) {
 
 	c := &Client{HTTPClient: srv.Client(), BaseURL: srv.URL}
 	var buf strings.Builder
-	err := c.DownloadAsset(context.Background(), srv.URL+"/asset", &buf)
+	asset := Asset{
+		Name:               "test-asset",
+		BrowserDownloadURL: srv.URL + "/asset",
+	}
+	err := c.DownloadAsset(context.Background(), asset, &buf)
 	if err != nil {
 		t.Fatalf("DownloadAsset: %v", err)
 	}
@@ -180,12 +184,63 @@ func TestDownloadAssetWithToken(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{HTTPClient: srv.Client(), BaseURL: srv.URL, Token: "ghp_secret"}
-	err := c.DownloadAsset(context.Background(), srv.URL+"/asset", io.Discard)
+	asset := Asset{
+		Name:               "test-asset",
+		URL:                srv.URL + "/api-asset",
+		BrowserDownloadURL: srv.URL + "/cdn-asset",
+	}
+	err := c.DownloadAsset(context.Background(), asset, io.Discard)
 	if err != nil {
 		t.Fatalf("DownloadAsset: %v", err)
 	}
 	if gotAuth != "token ghp_secret" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "token ghp_secret")
+	}
+}
+
+func TestDownloadAssetUsesAPIURLWithToken(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c := &Client{HTTPClient: srv.Client(), BaseURL: srv.URL, Token: "ghp_secret"}
+	asset := Asset{
+		Name:               "test-asset",
+		URL:                srv.URL + "/api-endpoint",
+		BrowserDownloadURL: srv.URL + "/cdn-endpoint",
+	}
+	err := c.DownloadAsset(context.Background(), asset, io.Discard)
+	if err != nil {
+		t.Fatalf("DownloadAsset: %v", err)
+	}
+	if gotPath != "/api-endpoint" {
+		t.Errorf("expected API URL path /api-endpoint, got %q", gotPath)
+	}
+}
+
+func TestDownloadAssetUsesBrowserURLWithoutToken(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c := &Client{HTTPClient: srv.Client(), BaseURL: srv.URL} // no token
+	asset := Asset{
+		Name:               "test-asset",
+		URL:                srv.URL + "/api-endpoint",
+		BrowserDownloadURL: srv.URL + "/cdn-endpoint",
+	}
+	err := c.DownloadAsset(context.Background(), asset, io.Discard)
+	if err != nil {
+		t.Fatalf("DownloadAsset: %v", err)
+	}
+	if gotPath != "/cdn-endpoint" {
+		t.Errorf("expected browser URL path /cdn-endpoint, got %q", gotPath)
 	}
 }
 

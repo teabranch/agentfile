@@ -422,9 +422,12 @@ Flags:
   -f, --file string     Path to Agentfile (default: auto-detect Agentfile or agentfile.yaml)
   -o, --output string   Output directory for binaries (default: "./build")
       --agent string    Build a single agent by name
+      --plugin          Also generate a Claude Code plugin directory
 ```
 
 Parses the Agentfile, generates Go source from each agent's `.md` file, and compiles standalone binaries. Also generates/updates `.mcp.json`.
+
+When `--plugin` is passed, each agent also gets a `<name>.claude-plugin/` directory in the output folder containing the binary, an MCP config, and any declared skills. See [Plugins guide](guides/plugins.md).
 
 ## `agentfile install`
 
@@ -558,7 +561,7 @@ func CompareVersions(a, b string) (int, error)  // -1, 0, or 1
 ```go
 func (c *Client) LatestRelease(ctx context.Context, ref ReleaseRef) (*Release, error)
 func (c *Client) GetRelease(ctx context.Context, ref ReleaseRef) (*Release, error)
-func (c *Client) DownloadAsset(ctx context.Context, url string, w io.Writer) error
+func (c *Client) DownloadAsset(ctx context.Context, asset Asset, w io.Writer) error
 ```
 
 ---
@@ -575,3 +578,51 @@ type BuildConfig struct {
 ```
 
 When `TargetOS` and `TargetArch` are set, the binary name becomes `<agent>-<os>-<arch>` and `CGO_ENABLED=0` is set for static cross-compilation.
+
+---
+
+## `definition.SkillDef`
+
+```go
+type SkillDef struct {
+    Name        string `yaml:"name"`
+    Description string `yaml:"description"`
+    Path        string `yaml:"path"` // relative to agent .md file
+}
+```
+
+Declared in block 2 of agent `.md` files under `skills:`. Used by `--plugin` to generate skill files in the plugin directory. All three fields are required.
+
+---
+
+## `plugin.GenerateConfig`
+
+```go
+type GenerateConfig struct {
+    OutputDir  string // parent directory (e.g., "build")
+    BinaryPath string // path to the compiled binary
+}
+```
+
+## `plugin.SkillFile`
+
+```go
+type SkillFile struct {
+    Name        string
+    Description string
+    Content     string // markdown body
+}
+```
+
+## `plugin.Generate`
+
+```go
+func Generate(def *definition.AgentDef, skills []SkillFile, cfg GenerateConfig) error
+```
+
+Creates a `<outputDir>/<name>.claude-plugin/` directory containing:
+
+- `.claude-plugin/plugin.json` — name, version, description, `"agentfile": true`
+- `.mcp.json` — `{ "mcpServers": { "<name>": { "command": "./<name>", "args": ["serve-mcp"] } } }`
+- `<name>` — copy of the compiled binary (executable)
+- `skills/<skill-name>/SKILL.md` — for each skill, with frontmatter (name, description) + content

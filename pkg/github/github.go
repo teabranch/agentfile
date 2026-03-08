@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 )
@@ -30,7 +31,8 @@ type Release struct {
 // Asset describes a release asset (binary).
 type Asset struct {
 	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
+	URL                string `json:"url"`                  // API URL (auth-safe for private repos)
+	BrowserDownloadURL string `json:"browser_download_url"` // CDN URL (strips auth on redirect)
 }
 
 // Client accesses GitHub Releases.
@@ -40,13 +42,19 @@ type Client struct {
 	Token      string // optional, for private repos / rate limits
 }
 
-// NewClient creates a client. It reads GITHUB_TOKEN from the environment
-// if no token is provided.
+// NewClient creates a client. It reads GITHUB_TOKEN from the environment,
+// falling back to `gh auth token` if the gh CLI is available.
 func NewClient() *Client {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+			token = strings.TrimSpace(string(out))
+		}
+	}
 	return &Client{
 		HTTPClient: http.DefaultClient,
 		BaseURL:    "https://api.github.com",
-		Token:      os.Getenv("GITHUB_TOKEN"),
+		Token:      token,
 	}
 }
 
@@ -132,8 +140,18 @@ func (c *Client) GetRelease(ctx context.Context, ref ReleaseRef) (*Release, erro
 }
 
 // DownloadAsset downloads a release asset to the given writer.
-func (c *Client) DownloadAsset(ctx context.Context, url string, w io.Writer) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// When a token is set and the asset has an API URL, it uses the API URL
+// to avoid auth-stripping redirects that break private repo downloads.
+func (c *Client) DownloadAsset(ctx context.Context, asset Asset, w io.Writer) error {
+	// Use API URL when authenticated (private repos redirect CDN URLs
+	// through S3, and Go's HTTP client strips the Authorization header
+	// on cross-domain redirects).
+	dlURL := asset.BrowserDownloadURL
+	if c.Token != "" && asset.URL != "" {
+		dlURL = asset.URL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dlURL, nil)
 	if err != nil {
 		return err
 	}
