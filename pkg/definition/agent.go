@@ -17,6 +17,13 @@ type CustomToolDef struct {
 	InputSchema map[string]any `yaml:"input_schema"`
 }
 
+// SkillDef describes a skill declared in agent frontmatter for plugin output.
+type SkillDef struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Path        string `yaml:"path"` // relative to agent .md file
+}
+
 // AgentDef is the parsed definition of a single agent, combining
 // data from the Agentfile reference and the agent's .md file.
 type AgentDef struct {
@@ -24,6 +31,7 @@ type AgentDef struct {
 	Description string
 	Tools       []string // Claude Code tool names: "Read", "Write", etc.
 	CustomTools []CustomToolDef
+	Skills      []SkillDef
 	Memory      bool
 	Version     string // set from Agentfile, not the .md
 	PromptBody  string // markdown after frontmatter
@@ -43,6 +51,7 @@ type frontmatter2 struct {
 	Description string          `yaml:"description"`
 	Tools       string          `yaml:"tools"`
 	CustomTools []CustomToolDef `yaml:"custom_tools"`
+	Skills      []SkillDef      `yaml:"skills"`
 	Model       string          `yaml:"model"`
 }
 
@@ -115,6 +124,20 @@ func ParseAgentMD(path string) (*AgentDef, error) {
 		}
 	}
 	def.CustomTools = fm2.CustomTools
+
+	// Validate and assign skills.
+	for i, s := range fm2.Skills {
+		if s.Name == "" {
+			return nil, fmt.Errorf("skills[%d]: name is required", i)
+		}
+		if s.Description == "" {
+			return nil, fmt.Errorf("skills[%d] (%s): description is required", i, s.Name)
+		}
+		if s.Path == "" {
+			return nil, fmt.Errorf("skills[%d] (%s): path is required", i, s.Name)
+		}
+	}
+	def.Skills = fm2.Skills
 
 	return def, nil
 }

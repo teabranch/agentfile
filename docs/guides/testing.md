@@ -345,6 +345,55 @@ Key considerations:
 - Integration tests need a working Go toolchain (they `go build` the binary)
 - Memory tests are isolated via `t.TempDir()` -- no filesystem cleanup needed
 
+## Plugin Testing
+
+Plugin generation is tested at two levels:
+
+### Unit Tests (`pkg/plugin/plugin_test.go`)
+
+Test the `plugin.Generate()` function with a fake binary and in-memory definitions:
+
+```go
+func TestGenerate_DirectoryStructure(t *testing.T) {
+    tmp := t.TempDir()
+    binaryPath := filepath.Join(tmp, "my-agent")
+    os.WriteFile(binaryPath, []byte("#!/bin/sh\necho hello"), 0o755)
+
+    def := &definition.AgentDef{
+        Name:    "my-agent",
+        Version: "1.0.0",
+    }
+    skills := []plugin.SkillFile{
+        {Name: "review-pr", Description: "Review a PR", Content: "Review content."},
+    }
+
+    outputDir := filepath.Join(tmp, "build")
+    os.MkdirAll(outputDir, 0o755)
+
+    err := plugin.Generate(def, skills, plugin.GenerateConfig{
+        OutputDir:  outputDir,
+        BinaryPath: binaryPath,
+    })
+    // Verify: .claude-plugin/plugin.json, .mcp.json, binary, skills/review-pr/SKILL.md
+}
+```
+
+Tests cover directory structure, plugin.json content, .mcp.json content, SKILL.md frontmatter + body, no-skills case, and binary permissions.
+
+### Integration Tests (`internal/integration/plugin_test.go`)
+
+End-to-end test that builds a real agent with `--plugin` and verifies the full output:
+
+```go
+func TestBuildPlugin(t *testing.T) {
+    // Create Agentfile, agent .md with skills, skill .md files
+    // Run: agentfile build --plugin
+    // Verify: plugin directory structure, plugin.json, .mcp.json, SKILL.md content, binary executable
+}
+```
+
+Run with `make integration`.
+
 ## Distribution Testing
 
 The distribution layer (install, uninstall, list, publish) has integration tests in `internal/integration/distribution_test.go`:
@@ -428,9 +477,10 @@ pkg/tools       -- registry, executor, validation
 pkg/memory      -- file store, limits, concurrency, manager tools
 pkg/prompt      -- loader, override, paths
 pkg/builtins    -- builtin tool implementations
-pkg/definition  -- Agentfile + agent .md parsing
+pkg/definition  -- Agentfile + agent .md parsing (including skills)
 pkg/builder     -- code generation templates
 pkg/mcp         -- bridge, tools, annotations, resources, prompts
+pkg/plugin      -- plugin directory generation
 pkg/registry    -- installed agents tracking, atomic save/load
 pkg/github      -- GitHub Releases client, version comparison, ref parsing
 internal/cli    -- root command, validate, flags

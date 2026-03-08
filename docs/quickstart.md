@@ -80,6 +80,10 @@ See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
 # Building my-agent...
 #   → ./build/my-agent
 # Updated .mcp.json
+
+# Optional: also generate a Claude Code plugin directory (with skills support)
+./build/agentfile build --plugin
+# → ./build/my-agent.claude-plugin/
 ```
 
 ## Step 5: Explore
@@ -152,6 +156,7 @@ Claude Code auto-discovers the agent via MCP. It sees the agent's tools, can rea
 - [Tools Guide](./guides/tools.md) -- builtin tools, annotations
 - [Memory Guide](./guides/memory.md) -- persistent state management
 - [Prompts Guide](./guides/prompts.md) -- prompt overrides for development
+- [Plugins Guide](./guides/plugins.md) -- Claude Code plugin output with skills
 - [Distribution Guide](./guides/distribution.md) -- publish, install from GitHub, update, uninstall
 - [MCP Integration](./guides/mcp.md) -- connecting to Claude Code
 - [Testing Guide](./guides/testing.md) -- unit, integration, and MCP testing

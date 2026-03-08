@@ -322,6 +322,126 @@ Simple prompt.
 	}
 }
 
+func TestParseAgentMD_Skills(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.md")
+
+	content := `---
+name: review-agent
+---
+
+---
+description: "A code review agent"
+tools: Read
+skills:
+  - name: review-pr
+    description: "Review a pull request for quality"
+    path: skills/review-pr.md
+  - name: write-tests
+    description: "Generate unit tests"
+    path: skills/write-tests.md
+---
+
+You are a code review agent.
+`
+	os.WriteFile(path, []byte(content), 0o644)
+
+	def, err := ParseAgentMD(path)
+	if err != nil {
+		t.Fatalf("ParseAgentMD: %v", err)
+	}
+
+	if len(def.Skills) != 2 {
+		t.Fatalf("skills count = %d, want 2", len(def.Skills))
+	}
+
+	if def.Skills[0].Name != "review-pr" {
+		t.Errorf("skills[0].name = %q, want %q", def.Skills[0].Name, "review-pr")
+	}
+	if def.Skills[0].Description != "Review a pull request for quality" {
+		t.Errorf("skills[0].description = %q", def.Skills[0].Description)
+	}
+	if def.Skills[0].Path != "skills/review-pr.md" {
+		t.Errorf("skills[0].path = %q", def.Skills[0].Path)
+	}
+
+	if def.Skills[1].Name != "write-tests" {
+		t.Errorf("skills[1].name = %q, want %q", def.Skills[1].Name, "write-tests")
+	}
+}
+
+func TestParseAgentMD_NoSkills(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.md")
+
+	content := `---
+name: simple
+---
+
+---
+tools: Read
+---
+
+Simple prompt.
+`
+	os.WriteFile(path, []byte(content), 0o644)
+
+	def, err := ParseAgentMD(path)
+	if err != nil {
+		t.Fatalf("ParseAgentMD: %v", err)
+	}
+	if len(def.Skills) != 0 {
+		t.Errorf("skills = %v, want empty", def.Skills)
+	}
+}
+
+func TestParseAgentMD_SkillsValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "missing name",
+			yaml: `skills:
+  - description: "test"
+    path: skills/test.md`,
+			wantErr: "name is required",
+		},
+		{
+			name: "missing description",
+			yaml: `skills:
+  - name: test
+    path: skills/test.md`,
+			wantErr: "description is required",
+		},
+		{
+			name: "missing path",
+			yaml: `skills:
+  - name: test
+    description: "test"`,
+			wantErr: "path is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "agent.md")
+			content := "---\nname: test\n---\n\n---\n" + tt.yaml + "\n---\n\nPrompt.\n"
+			os.WriteFile(path, []byte(content), 0o644)
+
+			_, err := ParseAgentMD(path)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !containsStr(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestParseDualFrontmatter_TooFewDelimiters(t *testing.T) {
 	_, _, _, err := parseDualFrontmatter("---\nfoo: bar\n---\nno second block")
 	if err == nil {

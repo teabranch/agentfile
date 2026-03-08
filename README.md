@@ -1,55 +1,67 @@
 # Agentfile
 
-A Go framework for packaging AI agent logic as executable CLI binaries. Declare agents in YAML + markdown, run `agentfile build`, and get standalone binaries — zero Go code required. Claude Code is the LLM runtime — the binary is a packaging format that exposes everything through CLI subcommands and an MCP server.
+**A packaging format for AI agents.** Build, version, and distribute focused agents as standalone binaries — with MCP auto-discovery built in.
 
-## Architecture
+Agentfile turns agent definitions — a system prompt, tools, and memory — into versioned, distributable CLI binaries. Authors publish to GitHub Releases. Consumers install with one command. Claude Code auto-discovers the rest.
+
+No Go code. No manual config. Just `agentfile build`.
+
+## Why We Built This
+
+CLAUDE.md files are great for single-repo instructions, but they don't version, don't distribute, and can't carry tools or memory. MCP servers solve the tool problem but weren't designed with context efficiency in mind — broad platform-wrapper servers can consume a significant portion of your context window on every turn.
+
+We wanted agents that follow the Unix philosophy: small, focused, composable. Each agent does one thing well with 6-15 purpose-built tools, keeping context overhead minimal while remaining easy to build, test, and share as real software.
+
+The result is a packaging format that gives agents the same lifecycle as any other software artifact: build, test, version, publish, install, update.
+
+We've benchmarked the context cost of focused agents vs. broad MCP servers extensively. See **[our benchmark methodology and results](docs/guides/benchmarks.md)** for the full analysis.
+
+## How It Works
+
+**Agents are repos.** An `Agentfile` manifest plus markdown definitions, versioned and released like any other software.
+
+```
+my-agent/
+  Agentfile              # declares agents + versions
+  agents/my-agent.md     # system prompt + tool/memory config
+```
+
+**Three commands, start to finish:**
+
+```bash
+# 1. Build — compiles a standalone binary from YAML + markdown
+agentfile build
+agentfile build --plugin  # also generate a Claude Code plugin (with skills)
+
+# 2. Publish — cross-compiles and creates a GitHub Release
+agentfile publish
+
+# 3. Install — one command, any machine, done
+agentfile install github.com/acme/my-agent
+```
+
+That last command downloads the right binary for your platform, wires it into Claude Code via MCP, and tracks it for future updates. No cloning, no building from source, no editing config files.
+
+**Claude Code is the brain. The binary is the body** — it provides the instructions, the hands (tools), and the memory. Claude Code loads the agent's prompt, discovers its tools via MCP, and handles all reasoning.
 
 ```
 Claude Code (LLM Runtime)
   |
   |  MCP-over-stdio
   v
-Agent Binary (Agentfile)
+Agent Binary
+  +-- --custom-instructions  -> system prompt
+  +-- serve-mcp              -> MCP server (tools + memory)
   +-- --version              -> semver
   +-- --describe             -> JSON manifest
-  +-- --custom-instructions  -> system prompt
-  +-- run-tool <name>        -> execute a tool
-  +-- memory read|write|...  -> persistent state
-  +-- serve-mcp              -> MCP server
   +-- validate               -> check wiring
-```
-
-The binary does **not** call the Claude API. Claude Code loads the agent's prompt, discovers its tools via MCP, and handles all reasoning.
-
-## Install
-
-```bash
-# Go users (requires Go 1.24+)
-go install github.com/teabranch/agentfile/cmd/agentfile@latest
-
-# Quick install (pre-built binary)
-curl -sSL https://raw.githubusercontent.com/teabranch/agentfile/main/install.sh | sh
-
-# From source
-git clone https://github.com/teabranch/agentfile.git
-cd agentfile
-make build && make install    # → /usr/local/bin/agentfile
-```
-
-Pin a version or change install directory:
-
-```bash
-# Specific version
-VERSION=1.0.0 curl -sSL https://raw.githubusercontent.com/teabranch/agentfile/main/install.sh | sh
-
-# Custom install directory
-INSTALL_DIR=~/.local/bin curl -sSL https://raw.githubusercontent.com/teabranch/agentfile/main/install.sh | sh
 ```
 
 ## Quick Start
 
-### 1. Create an `Agentfile` (or `agentfile.yaml`)
+### 1. Define your agent
 
+**`Agentfile`**
 ```yaml
 version: "1"
 agents:
@@ -58,10 +70,7 @@ agents:
     version: 0.1.0
 ```
 
-### 2. Write the agent `.md` file
-
-Agent files use **dual frontmatter** — two `---` blocks followed by the system prompt:
-
+**`agents/my-agent.md`** — dual frontmatter + system prompt:
 ```markdown
 ---
 name: my-agent
@@ -76,157 +85,69 @@ tools: Read, Write, Bash
 You are a helpful coding assistant. Use your tools to read and modify files.
 ```
 
-**Block 1** — identity: `name`, `memory` (set to any value to enable)
-**Block 2** — capabilities: `tools` (comma-separated), `description`
-**Body** — the system prompt embedded in the binary
-
-### 3. Build
+### 2. Build and use
 
 ```bash
 agentfile build
-# Building my-agent...
-#   → ./build/my-agent
-# Updated .mcp.json
+# -> ./build/my-agent binary + .mcp.json for Claude Code
+
+# Claude Code auto-discovers the agent — start using it immediately
 ```
 
-### 4. Verify
+### 3. Share it
 
 ```bash
-./build/my-agent --version             # my-agent v0.1.0
-./build/my-agent validate              # check all wiring
-./build/my-agent --describe            # JSON manifest
-./build/my-agent --custom-instructions # print system prompt
+# Publish to GitHub Releases (cross-compiled for macOS + Linux)
+agentfile publish
+
+# Anyone can install it with one command
+agentfile install github.com/you/my-agent
 ```
 
-### 5. Connect to Claude Code
+## What You Get
 
-`agentfile build` auto-generates `.mcp.json`. Claude Code picks it up automatically:
+| | CLAUDE.md | Agentfile |
+|---|---|---|
+| **Versioning** | Git history | Semantic versioning, pinnable releases |
+| **Distribution** | Copy the file | `agentfile install` from anywhere |
+| **Tools** | Described in prose | Registered, validated, executable via MCP |
+| **Memory** | None | Persistent key-value store per agent |
+| **Testing** | Manual | `go test`, integration tests, `validate` |
+| **Discovery** | Claude reads the file | MCP auto-discovery |
+| **Updates** | Pull and hope | `agentfile update` |
 
-```json
-{
-  "mcpServers": {
-    "my-agent": {
-      "command": "/path/to/build/my-agent",
-      "args": ["serve-mcp"]
-    }
-  }
-}
-```
-
-Or install the binary and register it:
+## Install
 
 ```bash
-agentfile install my-agent        # → .agentfile/bin/ + .mcp.json
-agentfile install -g my-agent     # → /usr/local/bin/ + ~/.claude/mcp.json
-```
+# Pre-built binary (easiest)
+curl -sSL https://raw.githubusercontent.com/teabranch/agentfile/main/install.sh | sh
 
-Install directly from GitHub Releases:
+# Go users
+go install github.com/teabranch/agentfile/cmd/agentfile@latest
 
-```bash
-agentfile install github.com/owner/repo/my-agent        # latest version
-agentfile install github.com/owner/repo/my-agent@1.0.0  # specific version
-```
-
-## Built-in Tools
-
-Agents declare tools by Claude Code name in their `.md` frontmatter:
-
-| Declare | MCP tool | Description |
-|---------|----------|-------------|
-| `Read` | `read_file` | Read file contents |
-| `Write` | `write_file` | Write file with dir creation |
-| `Edit` | `edit_file` | Find-and-replace in file |
-| `Bash` | `run_command` | Shell command execution |
-| `Glob` | `glob_files` | File pattern matching |
-| `Grep` | `grep_search` | Regex content search |
-
-Memory tools (`memory_read`, `memory_write`, `memory_list`, `memory_delete`) are added automatically when `memory` is set.
-
-## CLI Reference
-
-```bash
-# Build
-agentfile build                   # build all agents (auto-finds Agentfile or agentfile.yaml)
-agentfile build --agent my-agent  # build a single agent
-agentfile build -o ./dist         # custom output directory
-
-# Install
-agentfile install my-agent                            # install locally from ./build/
-agentfile install -g my-agent                         # install globally (/usr/local/bin/)
-agentfile install github.com/owner/repo/agent         # install from GitHub Releases
-agentfile install github.com/owner/repo/agent@1.0.0   # specific version
-
-# Publish
-agentfile publish                 # cross-compile + create GitHub Release
-agentfile publish --agent my-agent
-agentfile publish --dry-run       # cross-compile only, no release
-
-# Manage
-agentfile list                    # show installed agents
-agentfile update                  # update all remote agents
-agentfile update my-agent         # update a specific agent
-agentfile uninstall my-agent      # remove binary + MCP entry + registry
+# From source
+git clone https://github.com/teabranch/agentfile.git && cd agentfile
+make build && make install
 ```
 
 ## Documentation
 
-- **[Agentfile Format](docs/guides/agentfile-format.md)** — Agentfile YAML + agent .md format reference
-- **[Quickstart](docs/quickstart.md)** — build an agent in 5 minutes
-- **[Concepts](docs/concepts.md)** — architecture and mental model
-- **[Tools Guide](docs/guides/tools.md)** — CLI tools, builtin tools, annotations
-- **[Memory Guide](docs/guides/memory.md)** — persistent key-value storage
-- **[Prompts Guide](docs/guides/prompts.md)** — embedding and overriding prompts
-- **[Distribution Guide](docs/guides/distribution.md)** — publish, install, update, uninstall
-- **[MCP Integration](docs/guides/mcp.md)** — Claude Code integration via MCP
-- **[Testing Guide](docs/guides/testing.md)** — unit, integration, and MCP testing
-- **[Reference](docs/reference.md)** — all options, subcommands, flags, types
-- **[FAQ](docs/faq.md)** — common questions answered directly
-
-## Project Structure
-
-```
-Agentfile           Manifest declaring agents to build (also accepts agentfile.yaml)
-.claude/agents/     Agent .md files (prompt + frontmatter)
-build/              Compiled binaries (agentfile CLI + agents)
-
-pkg/agent/          Core runtime: New(), Execute(), functional options
-pkg/builtins/       Shared tool implementations (read, write, edit, bash, glob, grep)
-pkg/definition/     Agentfile YAML + agent .md parser
-pkg/builder/        Code generation + go build compilation
-pkg/tools/          Tool registry, executor, validation
-pkg/memory/         File-based KV store, limits, concurrency-safe manager
-pkg/prompt/         Embed.FS loader with override support
-pkg/mcp/            MCP-over-stdio bridge
-pkg/registry/       Installed agents tracking (~/.agentfile/registry.json)
-pkg/github/         GitHub Releases client for remote install/update
-internal/cli/       Cobra commands: root, run-tool, memory, serve-mcp, validate
-cmd/agentfile/      CLI: build, install, publish, list, update, uninstall
-```
-
-## Development
-
-```bash
-make all          # fmtcheck → vet → test → build
-make agents       # build agent binaries from Agentfile
-make integration  # end-to-end tests against built binary
-make install      # install agentfile CLI to /usr/local/bin
-make clean        # remove build artifacts
-```
-
-## Testing
-
-```bash
-# Unit tests
-make test
-
-# Integration tests (builds CLI + test agent, exercises all subcommands)
-make integration
-
-# Manual end-to-end
-make build && ./build/agentfile build
-./build/go-pro validate
-./build/go-pro --describe
-```
+| Guide | Description |
+|-------|-------------|
+| **[Quickstart](docs/quickstart.md)** | Build an agent in 5 minutes |
+| **[Concepts](docs/concepts.md)** | Architecture and mental model |
+| **[Agentfile Format](docs/guides/agentfile-format.md)** | YAML manifest + agent .md reference |
+| **[Tools](docs/guides/tools.md)** | Built-in tools, custom CLI tools, annotations |
+| **[Memory](docs/guides/memory.md)** | Persistent key-value storage |
+| **[Prompts](docs/guides/prompts.md)** | Embedding and overriding prompts |
+| **[Distribution](docs/guides/distribution.md)** | Publish, install, update, uninstall |
+| **[Plugins](docs/guides/plugins.md)** | Claude Code plugin output with skills |
+| **[MCP Integration](docs/guides/mcp.md)** | Claude Code integration via MCP |
+| **[Testing](docs/guides/testing.md)** | Unit, integration, and MCP testing |
+| **[Benchmarks](docs/guides/benchmarks.md)** | Token cost methodology and results |
+| **[Reference](docs/reference.md)** | All options, subcommands, flags, types |
+| **[FAQ](docs/faq.md)** | Common questions |
+| **[Development](docs/development.md)** | Contributing to Agentfile |
 
 ## Status
 

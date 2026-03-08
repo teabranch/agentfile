@@ -207,6 +207,17 @@ agent.WithLogger(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 }))),
 ```
 
+## Plugin Alternative
+
+Instead of wiring `.mcp.json` manually, you can generate a Claude Code plugin directory with `agentfile build --plugin`. The plugin wraps the binary with its own `.mcp.json` and adds skills:
+
+```bash
+agentfile build --plugin
+claude --plugin-dir ./build/my-agent.claude-plugin/
+```
+
+The plugin's `.mcp.json` uses a relative path (`./my-agent`), making the directory self-contained and portable. See the [Plugins Guide](./plugins.md).
+
 ## Compatibility
 
 Agentfile uses the standard MCP protocol. While it is designed for Claude Code, any MCP client can connect to an agent's `serve-mcp` server. The binary is a generic MCP server that happens to be built with Agentfile.

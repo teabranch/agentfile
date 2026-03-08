@@ -8,13 +8,39 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/teabranch/agentfile/pkg/builder"
 	"github.com/teabranch/agentfile/pkg/definition"
+	"github.com/teabranch/agentfile/pkg/plugin"
 )
+
+// loadSkillFiles reads skill file contents from disk, resolving paths
+// relative to the agent .md file's directory.
+func loadSkillFiles(def *definition.AgentDef, agentMDDir string) ([]plugin.SkillFile, error) {
+	var skills []plugin.SkillFile
+	for _, s := range def.Skills {
+		path := s.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(agentMDDir, path)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading skill %q at %s: %w", s.Name, path, err)
+		}
+
+		skills = append(skills, plugin.SkillFile{
+			Name:        s.Name,
+			Description: s.Description,
+			Content:     string(data),
+		})
+	}
+	return skills, nil
+}
 
 func newBuildCommand() *cobra.Command {
 	var (
 		agentfilePath string
 		outputDir     string
 		agentName     string
+		pluginFlag    bool
 	)
 
 	cmd := &cobra.Command{
@@ -25,18 +51,19 @@ and compiles standalone binaries into the output directory.
 
 Also generates/updates .mcp.json with serve-mcp entries for each agent.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBuild(agentfilePath, outputDir, agentName)
+			return runBuild(agentfilePath, outputDir, agentName, pluginFlag)
 		},
 	}
 
 	cmd.Flags().StringVarP(&agentfilePath, "file", "f", "", "Path to Agentfile")
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./build", "Output directory for binaries")
 	cmd.Flags().StringVar(&agentName, "agent", "", "Build a single agent by name")
+	cmd.Flags().BoolVar(&pluginFlag, "plugin", false, "Also generate a Claude Code plugin directory")
 
 	return cmd
 }
 
-func runBuild(agentfilePath, outputDir, agentName string) error {
+func runBuild(agentfilePath, outputDir, agentName string, pluginOutput bool) error {
 	if agentfilePath == "" {
 		agentfilePath = resolveAgentfile()
 	}
@@ -105,6 +132,31 @@ func runBuild(agentfilePath, outputDir, agentName string) error {
 		return fmt.Errorf("updating .mcp.json: %w", err)
 	}
 	fmt.Println("Updated .mcp.json")
+
+	// Generate plugin directories if --plugin flag is set.
+	if pluginOutput {
+		for name, def := range defs {
+			mdPath := af.Agents[name].Path
+			if !filepath.IsAbs(mdPath) {
+				mdPath = filepath.Join(baseDir, mdPath)
+			}
+			agentMDDir := filepath.Dir(mdPath)
+
+			skills, err := loadSkillFiles(def, agentMDDir)
+			if err != nil {
+				return fmt.Errorf("loading skills for %s: %w", name, err)
+			}
+
+			binaryPath := filepath.Join(absOut, name)
+			if err := plugin.Generate(def, skills, plugin.GenerateConfig{
+				OutputDir:  outputDir,
+				BinaryPath: binaryPath,
+			}); err != nil {
+				return fmt.Errorf("generating plugin for %s: %w", name, err)
+			}
+			fmt.Fprintf(os.Stderr, "→ %s/%s.claude-plugin/\n", outputDir, name)
+		}
+	}
 
 	return nil
 }

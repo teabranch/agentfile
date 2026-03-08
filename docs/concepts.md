@@ -17,6 +17,13 @@ Agent Binary (Agentfile)
   +-- memory read|write|list|delete|append  -> persistent state
   +-- serve-mcp              -> MCP-over-stdio server
   +-- validate               -> check agent wiring
+
+Optional: Claude Code Plugin (--plugin)
+  |
+  +-- .claude-plugin/plugin.json  -> plugin metadata
+  +-- .mcp.json                   -> MCP config (wraps the binary)
+  +-- <binary>                    -> copy of agent binary
+  +-- skills/<name>/SKILL.md      -> Claude Code skills
 ```
 
 **The binary does NOT call the Claude API.** Claude Code is the LLM. It loads the agent's prompt, sees the agent's tools via MCP, handles reasoning, and decides when to invoke tools. The binary is a packaging format -- a self-contained artifact that exposes everything through CLI subcommands and an MCP server.
@@ -54,18 +61,21 @@ You are a helpful coding assistant. Use your tools to read and modify files.
 ```
 
 **Block 1** sets identity: `name` and `memory` (any value enables it).
-**Block 2** sets capabilities: `tools` (comma-separated) and `description`.
+**Block 2** sets capabilities: `tools` (comma-separated), `description`, and optionally `skills` for plugin output.
 **Body** is the system prompt baked into the binary.
 
-Run `agentfile build` and the framework generates Go source and compiles a standalone binary — no Go code required. See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
+Run `agentfile build` and the framework generates Go source and compiles a standalone binary — no Go code required. Add `--plugin` to also generate a Claude Code plugin directory with skills. See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
 
 ## Agent Lifecycle
 
 ```
-agentfile build        Parse Agentfile + agent .md files
+agentfile build [--plugin]    Parse Agentfile + agent .md files
        |
        v
-Generated binary       Contains embedded prompt, tool references, memory config
+Generated binary              Contains embedded prompt, tool references, memory config
+       |
+       v (if --plugin)
+Plugin directory              .claude-plugin/ with binary, MCP config, skills
        |
        v
 agent.Execute()        Wire Cobra CLI, register tools, init memory
@@ -84,9 +94,11 @@ agent.Execute()        Wire Cobra CLI, register tools, init memory
 cmd.Execute()          Run the Cobra command tree
 ```
 
-`agentfile build` parses the Agentfile and each agent's `.md` file, generates Go source with the prompt embedded, and compiles a standalone binary. At runtime, `Execute()` creates the prompt loader, tool registry, memory store, and the full Cobra CLI tree, then hands off to Cobra.
+`agentfile build` parses the Agentfile and each agent's `.md` file, generates Go source with the prompt embedded, and compiles a standalone binary. With `--plugin`, it also generates a Claude Code plugin directory wrapping the binary with its MCP config and any declared skills. At runtime, `Execute()` creates the prompt loader, tool registry, memory store, and the full Cobra CLI tree, then hands off to Cobra.
 
 ## Distribution Lifecycle
+
+Agents are distributed as repos. An author maintains an Agentfile manifest and markdown definitions in a Git repository, publishes versioned releases to GitHub, and consumers install with a single command. No cloning, no building from source — just a binary that works.
 
 ```
 agentfile build        Compile agent binaries from Agentfile + .md
@@ -108,6 +120,64 @@ agentfile uninstall    Remove binary + MCP entry + registry entry
 ```
 
 The registry at `~/.agentfile/registry.json` tracks every installed agent with its source (local or remote), version, path, and scope. `agentfile list` shows all tracked agents.
+
+### Repository Structure
+
+A minimal agent repo contains just two files:
+
+```
+my-agent/
+  Agentfile              # manifest: agent name, path, version
+  agents/my-agent.md     # system prompt + frontmatter config
+```
+
+For agents with custom tools, skills, or additional resources, the layout grows naturally:
+
+```
+my-agent/
+  Agentfile
+  agents/my-agent.md
+  agents/skills/          # skill markdown files (for --plugin)
+    review-pr.md
+    write-tests.md
+  tools/lint.sh           # custom tool scripts
+  README.md
+```
+
+### Publisher vs. Consumer
+
+**As a publisher**, you maintain the repo, write the prompt and tool definitions, and run `agentfile publish` to create a GitHub Release with cross-compiled binaries. Versioning follows semver — bump the version in the Agentfile, publish, and consumers get a deterministic upgrade path.
+
+**As a consumer**, you run `agentfile install github.com/org/repo/agent` and the framework handles everything: downloading the right binary for your OS/arch, verifying it, wiring the MCP entry, and tracking it for future updates. You never touch Go, YAML, or config files.
+
+### Repository Patterns
+
+**Single-agent repo** — one agent per repository. Simple to version and publish:
+
+```yaml
+# Agentfile
+version: "1"
+agents:
+  code-reviewer:
+    path: agents/code-reviewer.md
+    version: 1.0.0
+```
+
+**Multi-agent monorepo** — several related agents in one repository. Each agent gets its own release tag (`<agent>/v<version>`), so consumers can install them independently:
+
+```yaml
+# Agentfile
+version: "1"
+agents:
+  go-pro:
+    path: .claude/agents/go-pro.md
+    version: 0.3.0
+  tool-eng:
+    path: .claude/agents/tool-eng.md
+    version: 0.2.0
+```
+
+Consumers install individual agents: `agentfile install github.com/org/repo/go-pro`. The monorepo pattern works well for teams that maintain a suite of related agents with shared conventions.
 
 ## Versioning Model
 
@@ -154,3 +224,21 @@ For development, use the override mechanism: place an `override.md` file at `~/.
 - You want one-command install from GitHub: `agentfile install github.com/org/repo/agent`
 
 They are not mutually exclusive. A project can have a CLAUDE.md for repo-level instructions and also use Agentfile binaries for specialized agent capabilities registered via `.mcp.json`.
+
+## Plugins: Beyond the Binary
+
+The binary is always the core artifact, but some Claude Code features — like skills — exist as directory structures, not compiled code. The `--plugin` flag bridges this gap: it builds the binary (as normal) and wraps it in a Claude Code plugin directory.
+
+```
+agentfile build --plugin
+→ build/my-agent                        # standalone binary (always)
+→ build/my-agent.claude-plugin/         # plugin directory (with --plugin)
+    .claude-plugin/plugin.json
+    .mcp.json
+    my-agent                            # binary copy
+    skills/review-pr/SKILL.md           # skills from frontmatter
+```
+
+Skills are declared in the agent `.md` frontmatter and reference plain markdown files. The plugin generator wraps them in the SKILL.md format Claude Code expects.
+
+Test locally with `claude --plugin-dir ./build/my-agent.claude-plugin/`. See the [Plugins Guide](./guides/plugins.md) for details.

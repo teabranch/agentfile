@@ -129,9 +129,37 @@ Reads your `Agentfile`, parses each agent's `.md` file, generates Go source, and
 ```bash
 agentfile build              # build all agents
 agentfile build --agent foo  # build a single agent
+agentfile build --plugin     # also generate Claude Code plugin directories
 ```
 
-Flags: `-f` (Agentfile path), `-o` (output dir), `--agent` (single agent).
+Flags: `-f` (Agentfile path), `-o` (output dir), `--agent` (single agent), `--plugin` (generate plugin dir).
+
+## What is a plugin?
+
+A Claude Code plugin directory that wraps the agent binary. The `--plugin` flag generates it alongside the normal binary build. The plugin includes the binary, an MCP config, and any skills declared in the agent's `.md` frontmatter.
+
+```
+build/my-agent.claude-plugin/
+  .claude-plugin/plugin.json
+  .mcp.json
+  my-agent
+  skills/review-pr/SKILL.md
+```
+
+Test locally with `claude --plugin-dir ./build/my-agent.claude-plugin/`. See the [Plugins Guide](./guides/plugins.md).
+
+## What are skills?
+
+Skills are markdown files that provide Claude Code with specialized capabilities (like `/review-pr` or `/write-tests`). They are declared in the agent's `.md` frontmatter and packaged into the plugin directory:
+
+```yaml
+skills:
+  - name: review-pr
+    description: "Review a pull request"
+    path: skills/review-pr.md
+```
+
+Skills require the `--plugin` flag — they are a plugin feature, not a binary feature.
 
 ## How do I debug MCP communication?
 
