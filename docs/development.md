@@ -33,6 +33,67 @@ make build && ./build/agentfile build
 ./build/go-pro --describe
 ```
 
+## Releasing a New Version
+
+The agentfile CLI uses **auto-release**: bump the version constant, push to main, and CI handles the rest.
+
+### Steps
+
+1. **Bump the version** in `cmd/agentfile/main.go`:
+
+```go
+const cliVersion = "0.3.0"  // ← change this
+```
+
+2. **Commit and push to main:**
+
+```bash
+git add cmd/agentfile/main.go
+git commit -m "Bump version to 0.3.0 for release"
+git push
+```
+
+3. **CI does the rest.** The pipeline runs 4 jobs in order:
+
+```
+test → e2e-install → check-version → release
+       ↓                ↓               ↓
+       Build & verify   Compare const   Cross-compile for
+       test agent       vs git tags     4 platforms, create
+                                        GitHub Release + tag
+```
+
+- **test**: lint, vet, unit tests, integration tests
+- **e2e-install**: builds CLI, creates a test agent, publishes (dry-run), installs, verifies
+- **check-version**: extracts `cliVersion` from source, checks if `v<version>` tag exists
+- **release**: if tag is new, cross-compiles (`darwin/linux × amd64/arm64`), creates GitHub Release with tag `v<version>`
+
+### How It Works
+
+The version source of truth is `const cliVersion` in `cmd/agentfile/main.go:12`. CI extracts it with grep, checks `git rev-parse "v${VERSION}"`, and sets `should_release=true/false`. The release job only runs when the tag doesn't exist yet.
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Release skipped | Tag already exists for current version | Bump `cliVersion` to a new version |
+| Tests fail | Code changes broke something | Fix tests before bumping version |
+| e2e-install fails | Build or install regression | Check `make integration` locally |
+
+### Version Scheme
+
+Semantic versioning: `MAJOR.MINOR.PATCH`
+
+- **PATCH** (0.3.0 → 0.3.1): bug fixes, doc updates
+- **MINOR** (0.3.0 → 0.4.0): new features, non-breaking changes
+- **MAJOR** (0.x → 1.0): breaking API changes (reserved for v1.0 stability)
+
+### Don'ts
+
+- Don't create tags manually — CI creates them
+- Don't use `git tag` or `git push --tags` — the pipeline handles it
+- Don't bump the version without pushing — the tag is created by CI, not locally
+
 ## Project Structure
 
 ```
