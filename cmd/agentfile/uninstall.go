@@ -1,29 +1,39 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/teabranch/agentfile/pkg/registry"
+	"github.com/teabranch/agentfile/pkg/runtimecfg"
 )
 
 func newUninstallCommand() *cobra.Command {
-	return &cobra.Command{
+	var runtimeFlag string
+
+	cmd := &cobra.Command{
 		Use:   "uninstall <agent-name>",
 		Short: "Remove an installed agent",
-		Long: `Removes an agent binary, unwires it from MCP config, and removes it
-from the registry. Uses the registry to find the binary path and scope.`,
+		Long: `Removes an agent binary, unwires it from MCP config for all detected
+runtimes, and removes it from the registry. Use --runtime to target a
+specific runtime or "all" for all supported runtimes.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUninstall(args[0])
+			writers, err := runtimecfg.Resolve(runtimeFlag)
+			if err != nil {
+				return err
+			}
+			return runUninstall(args[0], writers)
 		},
 	}
+
+	cmd.Flags().StringVar(&runtimeFlag, "runtime", "auto", "Target runtime: auto, all, claude-code, codex, gemini")
+
+	return cmd
 }
 
-func runUninstall(name string) error {
+func runUninstall(name string, writers []runtimecfg.ConfigWriter) error {
 	regPath, err := registry.DefaultPath()
 	if err != nil {
 		return err
@@ -44,19 +54,24 @@ func runUninstall(name string) error {
 	}
 	fmt.Printf("Removed %s\n", entry.Path)
 
-	// Unwire from MCP config.
-	mcpPath := ".mcp.json"
-	if entry.Scope == "global" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("getting home dir: %w", err)
+	// Unwire from MCP config for all target runtimes.
+	global := entry.Scope == "global"
+	for _, w := range writers {
+		var cfgPath string
+		if global {
+			cfgPath, err = w.GlobalPath()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve global path for %s: %v\n", w.Runtime(), err)
+				continue
+			}
+		} else {
+			cfgPath = w.LocalPath()
 		}
-		mcpPath = filepath.Join(home, ".claude", "mcp.json")
-	}
-	if err := removeMCPEntry(mcpPath, name); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update %s: %v\n", mcpPath, err)
-	} else {
-		fmt.Printf("Updated %s\n", mcpPath)
+		if err := w.Remove(cfgPath, name); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not update %s (%s): %v\n", cfgPath, w.Runtime(), err)
+		} else {
+			fmt.Printf("Updated %s (%s)\n", cfgPath, w.Runtime())
+		}
 	}
 
 	// Remove from registry.
@@ -66,34 +81,4 @@ func runUninstall(name string) error {
 	}
 	fmt.Printf("Uninstalled %s\n", name)
 	return nil
-}
-
-// removeMCPEntry removes a single server entry from an MCP config file.
-func removeMCPEntry(path, name string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	var cfg map[string]any
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return err
-	}
-
-	servers, ok := cfg["mcpServers"].(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	delete(servers, name)
-	cfg["mcpServers"] = servers
-
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(out, '\n'), 0o644)
 }

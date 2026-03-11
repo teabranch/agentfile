@@ -18,7 +18,7 @@ Build and use:
 
 ```bash
 cd basic
-agentfile build            # -> ./build/my-agent + .mcp.json
+agentfile build            # -> ./build/my-agent + MCP config
 ./build/my-agent --version
 ./build/my-agent --describe
 ./build/my-agent validate
@@ -39,10 +39,10 @@ Build and use:
 
 ```bash
 cd multi-agent
-agentfile build            # -> ./build/golang-pro, ./build/code-reviewer + .mcp.json
+agentfile build            # -> ./build/golang-pro, ./build/code-reviewer + MCP config
 ```
 
-Both agents are auto-discovered by Claude Code via the generated `.mcp.json`.
+Both agents are auto-discovered by your runtime via the generated MCP config.
 
 ### [`model-override/`](model-override/)
 
@@ -58,7 +58,7 @@ Build and use:
 
 ```bash
 cd model-override
-agentfile build                 # -> ./build/smart-reviewer + .mcp.json
+agentfile build                 # -> ./build/smart-reviewer + MCP config
 ./build/smart-reviewer --describe             # shows model in manifest
 ./build/smart-reviewer config get             # shows compiled defaults
 ./build/smart-reviewer config set model sonnet  # override at runtime

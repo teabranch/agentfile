@@ -25,7 +25,7 @@
 // Build with the agentfile CLI:
 //
 //	agentfile build    # → build/my-agent (standalone binary)
-//	agentfile install my-agent  # → .agentfile/bin/ + .mcp.json
+//	agentfile install my-agent  # → .agentfile/bin/ + MCP config (auto-detected runtimes)
 //
 // # Runtime Library
 //

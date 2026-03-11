@@ -43,5 +43,5 @@ bench-report:
 bench-all: bench bench-integration bench-report
 
 clean:
-	rm -rf build/ .agentfile/ .mcp.json
+	rm -rf build/ .agentfile/ .mcp.json .codex/config.toml .gemini/settings.json
 	go clean ./...

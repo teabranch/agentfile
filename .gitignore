@@ -31,8 +31,10 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Generated MCP config
+# Generated MCP config (multi-runtime)
 .mcp.json
+.codex/config.toml
+.gemini/settings.json
 
 # Build output (agentfile CLI + agent binaries)
 build/
