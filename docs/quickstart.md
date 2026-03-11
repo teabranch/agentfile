@@ -79,7 +79,11 @@ See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
 ./build/agentfile build
 # Building my-agent...
 #   → ./build/my-agent
-# Updated .mcp.json
+# Updated .mcp.json (claude-code)
+
+# Target a specific runtime or all runtimes
+./build/agentfile build --runtime codex    # → .codex/config.toml
+./build/agentfile build --runtime all      # → all detected runtimes
 
 # Optional: also generate a Claude Code plugin directory (with skills support)
 ./build/agentfile build --plugin
@@ -117,9 +121,9 @@ See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
 ./build/my-agent config reset model            # revert to default
 ```
 
-## Step 6: Connect to Claude Code
+## Step 6: Connect to Your Runtime
 
-`agentfile build` auto-generates `.mcp.json`. Claude Code picks it up:
+`agentfile build` auto-generates MCP config for detected runtimes. For Claude Code, this is `.mcp.json`:
 
 ```json
 {
@@ -135,11 +139,20 @@ See the [Agentfile Format Guide](./guides/agentfile-format.md) for full details.
 Or install the binary explicitly:
 
 ```bash
-./build/agentfile install my-agent       # local: .agentfile/bin/ + .mcp.json
-./build/agentfile install -g my-agent    # global: /usr/local/bin/ + ~/.claude/mcp.json
+./build/agentfile install my-agent                  # local install, auto-detect runtimes
+./build/agentfile install -g my-agent               # global install
+./build/agentfile install --runtime codex my-agent  # target Codex specifically
 ```
 
-Claude Code auto-discovers the agent via MCP. It sees the agent's tools, can read its system prompt, and can interact with its memory.
+Supported runtimes:
+
+| Runtime | Local Config | Global Config |
+|---------|-------------|---------------|
+| Claude Code | `.mcp.json` | `~/.claude/mcp.json` |
+| Codex | `.codex/config.toml` | `~/.codex/config.toml` |
+| Gemini CLI | `.gemini/settings.json` | `~/.gemini/settings.json` |
+
+Your runtime auto-discovers the agent via MCP. It sees the agent's tools, can read its system prompt, and can interact with its memory.
 
 ## What You Get vs. a CLAUDE.md
 

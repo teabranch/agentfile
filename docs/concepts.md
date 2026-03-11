@@ -3,9 +3,9 @@
 ## Architecture
 
 ```
-Claude Code (LLM Runtime / Orchestrator)
+LLM Runtime (Claude Code / Codex / Gemini CLI)
   |
-  |  MCP-over-stdio (.mcp.json)
+  |  MCP-over-stdio
   |
   v
 Agent Binary (Agentfile)
@@ -257,7 +257,7 @@ This writes the override to `config.yaml` during install so it takes effect imme
 - You need MCP-based composition with other agents or tools
 - You want one-command install from GitHub: `agentfile install github.com/org/repo/agent`
 
-**Composition patterns:** These are not mutually exclusive. A project can have a CLAUDE.md for repo-level instructions, Agent Skills for lightweight context injection, and Agentfile binaries for specialized agent capabilities registered via `.mcp.json`. Sub-agents can also invoke Agentfile agents' MCP tools.
+**Composition patterns:** These are not mutually exclusive. A project can have a CLAUDE.md for repo-level instructions, Agent Skills for lightweight context injection, and Agentfile binaries for specialized agent capabilities registered via MCP config. Sub-agents can also invoke Agentfile agents' MCP tools.
 
 ## Plugins: Beyond the Binary
 

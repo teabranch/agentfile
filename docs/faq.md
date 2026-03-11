@@ -15,7 +15,7 @@ CLAUDE.md works well for repo-specific instructions in a single project. Agentfi
 - **Validation** -- `validate` subcommand checks that tools exist, memory is writable, prompts load
 - **Machine-readable** -- `--describe` returns a JSON manifest
 
-They are not mutually exclusive. A project can have both a CLAUDE.md and Agentfile agents in `.mcp.json`.
+They are not mutually exclusive. A project can have both a CLAUDE.md and Agentfile agents registered via MCP config.
 
 ## When should I use skills vs sub-agents vs Agentfile agents?
 
@@ -29,7 +29,7 @@ These approaches compose well together. An Agentfile agent can coexist with skil
 
 ## Can I use this without Claude Code?
 
-Yes. The `serve-mcp` subcommand starts a standard MCP-over-stdio server. Any MCP client can connect to it. The binary is a generic MCP server that happens to be built with Agentfile.
+Yes. Agentfile supports Claude Code, Codex, and Gemini CLI out of the box. The `serve-mcp` subcommand starts a standard MCP-over-stdio server, so any MCP client can connect to it. Use `--runtime` on `build`/`install` to target your preferred runtime.
 
 You can also use the CLI directly:
 
@@ -143,7 +143,7 @@ Go 1.24 or later. The `go.mod` specifies `go 1.24.0`.
 
 1. Create an `Agentfile` (YAML) and an agent `.md` file with dual frontmatter
 2. Build: `agentfile build`
-3. The `.mcp.json` is auto-generated
+3. MCP config is auto-generated for detected runtimes (use `--runtime` to target a specific one)
 
 ## What is the `agentfile build` command?
 
@@ -155,7 +155,7 @@ agentfile build --agent foo  # build a single agent
 agentfile build --plugin     # also generate Claude Code plugin directories
 ```
 
-Flags: `-f` (Agentfile path), `-o` (output dir), `--agent` (single agent), `--plugin` (generate plugin dir).
+Flags: `-f` (Agentfile path), `-o` (output dir), `--agent` (single agent), `--plugin` (generate plugin dir), `--runtime` (target runtime: auto, all, claude-code, codex, gemini).
 
 ## What is a plugin?
 
@@ -236,4 +236,4 @@ Only agents installed from a remote source can be auto-updated. For locally-buil
 agentfile uninstall my-agent
 ```
 
-This removes the binary, unwires it from `.mcp.json`, and removes it from the registry.
+This removes the binary, unwires it from all detected runtime configs, and removes it from the registry.

@@ -124,7 +124,7 @@ agentfile install -g github.com/owner/repo/agent-name
 3. **Download** -- downloads the binary to a temp file
 4. **Verify** -- runs `<binary> --describe` to confirm it's a valid agent
 5. **Install** -- moves to `.agentfile/bin/` (or `/usr/local/bin/` with `-g`)
-6. **Wire MCP** -- updates `.mcp.json` (or `~/.claude/mcp.json` with `-g`)
+6. **Wire MCP** -- updates MCP config for detected runtimes (Claude Code `.mcp.json`, Codex `.codex/config.toml`, Gemini `.gemini/settings.json`)
 7. **Track** -- records the install in `~/.agentfile/registry.json`
 
 ### Private Repositories
@@ -164,8 +164,9 @@ Local installs from `./build/` continue to work as before, and now also track in
 
 ```bash
 agentfile build
-agentfile install my-agent        # .agentfile/bin/ + .mcp.json + registry
-agentfile install -g my-agent     # /usr/local/bin/ + ~/.claude/mcp.json + registry
+agentfile install my-agent                  # .agentfile/bin/ + MCP config (auto-detected runtimes) + registry
+agentfile install -g my-agent               # /usr/local/bin/ + global MCP config + registry
+agentfile install --runtime codex my-agent  # target Codex specifically
 ```
 
 ## Updating
@@ -211,14 +212,15 @@ Shows all agents tracked in the registry regardless of source.
 ```bash
 agentfile uninstall my-agent
 # Removed /path/.agentfile/bin/my-agent
-# Updated .mcp.json
+# Updated .mcp.json (claude-code)
+# Updated .codex/config.toml (codex)
 # Uninstalled my-agent
 ```
 
 Uninstall performs three actions:
 
 1. **Removes the binary** from its installed path
-2. **Unwires MCP** -- removes the entry from `.mcp.json` or `~/.claude/mcp.json`
+2. **Unwires MCP** -- removes the entry from all detected runtime configs (or specify `--runtime`)
 3. **Removes from registry** -- cleans up `~/.agentfile/registry.json`
 
 ## Registry
@@ -277,7 +279,7 @@ agentfile publish --agent my-agent
 # Install from your team's repo
 agentfile install github.com/your-org/agents/code-reviewer
 
-# Claude Code auto-discovers it via .mcp.json
+# Your runtime auto-discovers it via MCP config
 # Later, check for updates
 agentfile update code-reviewer
 ```

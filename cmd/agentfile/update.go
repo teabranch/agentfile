@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/teabranch/agentfile/pkg/github"
 	"github.com/teabranch/agentfile/pkg/registry"
+	"github.com/teabranch/agentfile/pkg/runtimecfg"
 )
 
 func newUpdateCommand() *cobra.Command {
@@ -93,7 +94,8 @@ func runUpdate(name string) error {
 		global := entry.Scope == "global"
 		ref.Version = latestVersion
 		newRef := fmt.Sprintf("github.com/%s/%s/%s@%s", ref.Owner, ref.Repo, ref.Agent, latestVersion)
-		if err := runRemoteInstall(newRef, global); err != nil {
+		writers := runtimecfg.Detect()
+		if err := runRemoteInstall(newRef, global, writers); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: update failed: %v\n", entry.Name, err)
 			continue
 		}

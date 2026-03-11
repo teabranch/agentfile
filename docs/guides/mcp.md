@@ -1,6 +1,6 @@
 # MCP Integration Guide
 
-Agentfile agents integrate with Claude Code through the Model Context Protocol (MCP). The `serve-mcp` subcommand starts an MCP-over-stdio server that exposes the agent's tools, prompts, and memory.
+Agentfile agents integrate with MCP-compatible runtimes (Claude Code, Codex, Gemini CLI) through the Model Context Protocol (MCP). The `serve-mcp` subcommand starts an MCP-over-stdio server that exposes the agent's tools, prompts, and memory.
 
 ## What `serve-mcp` Exposes
 
@@ -39,7 +39,17 @@ This is informational — the runtime decides which model to use.
 - `system` -- returns the agent's system prompt as a prompt message
 - `memory-context` (when memory is enabled) -- returns memory state; accepts an optional `key` argument to return a specific key's content
 
-## `.mcp.json` Configuration
+## Runtime Config Files
+
+`agentfile build` and `agentfile install` auto-generate MCP config for detected runtimes. Use `--runtime` to target a specific runtime.
+
+| Runtime | Local Config | Global Config | Format |
+|---------|-------------|---------------|--------|
+| Claude Code | `.mcp.json` | `~/.claude/mcp.json` | JSON `{"mcpServers": {...}}` |
+| Codex | `.codex/config.toml` | `~/.codex/config.toml` | TOML `[mcp_servers.name]` |
+| Gemini CLI | `.gemini/settings.json` | `~/.gemini/settings.json` | JSON `{"mcpServers": {...}}` |
+
+## `.mcp.json` Configuration (Claude Code)
 
 Claude Code discovers MCP servers through `.mcp.json` in the project root.
 
@@ -230,4 +240,6 @@ The plugin's `.mcp.json` uses a relative path (`./my-agent`), making the directo
 
 ## Compatibility
 
-Agentfile uses the standard MCP protocol. While it is designed for Claude Code, any MCP client can connect to an agent's `serve-mcp` server. The binary is a generic MCP server that happens to be built with Agentfile.
+Agentfile uses the standard MCP protocol. All three supported runtimes (Claude Code, Codex, Gemini CLI) connect via MCP-over-stdio, and any other MCP client can connect to an agent's `serve-mcp` server. The binary is a generic MCP server that happens to be built with Agentfile.
+
+The `--runtime` flag on `build`, `install`, and `uninstall` controls which runtime configs are generated. The `auto` default detects installed runtimes. Use `all` to target all three.

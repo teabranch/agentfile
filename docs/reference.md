@@ -474,13 +474,25 @@ Usage:
   agentfile build [flags]
 
 Flags:
-  -f, --file string     Path to Agentfile (default: auto-detect Agentfile or agentfile.yaml)
-  -o, --output string   Output directory for binaries (default: "./build")
-      --agent string    Build a single agent by name
-      --plugin          Also generate a Claude Code plugin directory
+  -f, --file string      Path to Agentfile (default: auto-detect Agentfile or agentfile.yaml)
+  -o, --output string    Output directory for binaries (default: "./build")
+      --agent string     Build a single agent by name
+      --plugin           Also generate a Claude Code plugin directory
+      --runtime string   Target runtime: auto, all, claude-code, codex, gemini (default: "auto")
 ```
 
-Parses the Agentfile, generates Go source from each agent's `.md` file, and compiles standalone binaries. Also generates/updates `.mcp.json`.
+Parses the Agentfile, generates Go source from each agent's `.md` file, and compiles standalone binaries. Also generates/updates MCP config for the target runtime(s).
+
+The `--runtime` flag controls which runtimes receive MCP config:
+- `auto` (default) — detects installed runtimes by checking for their global config directories, falls back to Claude Code
+- `all` — generates config for all supported runtimes (Claude Code, Codex, Gemini CLI)
+- `claude-code` / `codex` / `gemini` — targets a specific runtime
+
+| Runtime | Local Config | Global Config |
+|---------|-------------|---------------|
+| Claude Code | `.mcp.json` | `~/.claude/mcp.json` |
+| Codex | `.codex/config.toml` | `~/.codex/config.toml` |
+| Gemini CLI | `.gemini/settings.json` | `~/.gemini/settings.json` |
 
 When `--plugin` is passed, each agent also gets a `<name>.claude-plugin/` directory in the output folder containing the binary, an MCP config, and any declared skills. See [Plugins guide](guides/plugins.md).
 
@@ -491,11 +503,12 @@ Usage:
   agentfile install <agent-name | github.com/owner/repo[/agent][@version]> [flags]
 
 Flags:
-  -g, --global        Install globally to /usr/local/bin
-      --model string  Override the agent's model in ~/.agentfile/<name>/config.yaml
+  -g, --global          Install globally to /usr/local/bin
+      --model string    Override the agent's model in ~/.agentfile/<name>/config.yaml
+      --runtime string  Target runtime: auto, all, claude-code, codex, gemini (default: "auto")
 ```
 
-Installs an agent binary and wires it into MCP. Supports two modes:
+Installs an agent binary and wires it into the MCP config for detected (or specified) runtimes. Supports two modes:
 
 **Local install** (from `./build/`):
 
@@ -557,10 +570,13 @@ If no agent name is given, checks all remote-installed agents.
 
 ```
 Usage:
-  agentfile uninstall <agent-name>
+  agentfile uninstall <agent-name> [flags]
+
+Flags:
+      --runtime string  Target runtime: auto, all, claude-code, codex, gemini (default: "auto")
 ```
 
-Removes an installed agent: deletes the binary, removes the MCP entry from `.mcp.json` (or `~/.claude/mcp.json` for global installs), and removes the entry from the registry.
+Removes an installed agent: deletes the binary, removes the MCP entry from all detected (or specified) runtime configs, and removes the entry from the registry.
 
 ---
 

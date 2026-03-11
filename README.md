@@ -40,7 +40,7 @@ agentfile publish
 agentfile install github.com/acme/my-agent
 ```
 
-That last command downloads the right binary for your platform, wires it into Claude Code via MCP, and tracks it for future updates. No cloning, no building from source, no editing config files.
+That last command downloads the right binary for your platform, wires it into your MCP-compatible runtime (Claude Code, Codex, Gemini CLI — auto-detected), and tracks it for future updates. No cloning, no building from source, no editing config files.
 
 **Claude Code is the brain. The binary is the body** — it provides the instructions, the hands (tools), and the memory. Claude Code loads the agent's prompt, discovers its tools via MCP, and handles all reasoning.
 
@@ -90,9 +90,9 @@ You are a helpful coding assistant. Use your tools to read and modify files.
 
 ```bash
 agentfile build
-# -> ./build/my-agent binary + .mcp.json for Claude Code
+# -> ./build/my-agent binary + MCP config for detected runtimes
 
-# Claude Code auto-discovers the agent — start using it immediately
+# Your runtime auto-discovers the agent — start using it immediately
 ```
 
 ### 3. Share it

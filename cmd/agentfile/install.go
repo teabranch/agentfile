@@ -12,16 +12,18 @@ import (
 	"github.com/teabranch/agentfile/pkg/fsutil"
 	"github.com/teabranch/agentfile/pkg/github"
 	"github.com/teabranch/agentfile/pkg/registry"
+	"github.com/teabranch/agentfile/pkg/runtimecfg"
 )
 
 func newInstallCommand() *cobra.Command {
 	var global bool
 	var modelOverride string
+	var runtimeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "install <agent-name | github.com/owner/repo[/agent][@version]>",
 		Short: "Install an agent binary (local or remote)",
-		Long: `Installs an agent binary and updates the MCP config.
+		Long: `Installs an agent binary and updates the MCP config for detected runtimes.
 
 Local install (from ./build/):
   agentfile install my-agent
@@ -30,13 +32,19 @@ Remote install (from GitHub Releases):
   agentfile install github.com/owner/repo/agent
   agentfile install github.com/owner/repo/agent@1.0.0
 
-By default, installs to .agentfile/bin/ (project-local) and updates .mcp.json.
-With --global, installs to /usr/local/bin/ and updates ~/.claude/mcp.json.
+By default, installs to .agentfile/bin/ (project-local) and updates MCP config.
+With --global, installs to /usr/local/bin/ and updates global MCP config.
 
 Override settings at install time:
-  agentfile install --model gpt-5 github.com/owner/repo/agent`,
+  agentfile install --model gpt-5 github.com/owner/repo/agent
+  agentfile install --runtime codex github.com/owner/repo/agent`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			writers, err := runtimecfg.Resolve(runtimeFlag)
+			if err != nil {
+				return err
+			}
+
 			var agentName string
 			if github.IsRemoteRef(args[0]) {
 				parsed, err := github.ParseRef(args[0])
@@ -44,12 +52,12 @@ Override settings at install time:
 					return err
 				}
 				agentName = parsed.Agent
-				if err := runRemoteInstall(args[0], global); err != nil {
+				if err := runRemoteInstall(args[0], global, writers); err != nil {
 					return err
 				}
 			} else {
 				agentName = args[0]
-				if err := runLocalInstall(args[0], global); err != nil {
+				if err := runLocalInstall(args[0], global, writers); err != nil {
 					return err
 				}
 			}
@@ -67,17 +75,18 @@ Override settings at install time:
 
 	cmd.Flags().BoolVarP(&global, "global", "g", false, "Install globally to /usr/local/bin")
 	cmd.Flags().StringVar(&modelOverride, "model", "", "Override the agent's model in ~/.agentfile/<name>/config.yaml")
+	cmd.Flags().StringVar(&runtimeFlag, "runtime", "auto", "Target runtime: auto, all, claude-code, codex, gemini")
 
 	return cmd
 }
 
-func runLocalInstall(name string, global bool) error {
+func runLocalInstall(name string, global bool, writers []runtimecfg.ConfigWriter) error {
 	src := filepath.Join("build", name)
 	if _, err := os.Stat(src); err != nil {
 		return fmt.Errorf("binary not found: %s (run 'agentfile build' first)", src)
 	}
 
-	binDir, mcpPath := installPaths(global)
+	binDir := installBinDir(global)
 
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return fmt.Errorf("creating bin dir: %w", err)
@@ -92,21 +101,20 @@ func runLocalInstall(name string, global bool) error {
 	}
 	fmt.Printf("Installed %s → %s\n", name, dst)
 
-	// Update mcp.json.
+	// Update MCP configs for target runtimes.
 	absDst, err := filepath.Abs(dst)
 	if err != nil {
 		return fmt.Errorf("resolving absolute path: %w", err)
 	}
-	entries := map[string]MCPServerEntry{
+	entries := map[string]runtimecfg.ServerEntry{
 		name: {
 			Command: absDst,
 			Args:    []string{"serve-mcp"},
 		},
 	}
-	if err := mergeMCPJSON(mcpPath, entries); err != nil {
-		return fmt.Errorf("updating %s: %w", mcpPath, err)
+	if err := mergeRuntimeConfigs(writers, global, entries); err != nil {
+		return err
 	}
-	fmt.Printf("Updated %s\n", mcpPath)
 
 	// Track in registry.
 	version := ""
@@ -120,7 +128,7 @@ func runLocalInstall(name string, global bool) error {
 	return trackInstall(name, "local", version, absDst, scope)
 }
 
-func runRemoteInstall(ref string, global bool) error {
+func runRemoteInstall(ref string, global bool, writers []runtimecfg.ConfigWriter) error {
 	parsed, err := github.ParseRef(ref)
 	if err != nil {
 		return err
@@ -196,7 +204,7 @@ func runRemoteInstall(ref string, global bool) error {
 	}
 
 	// Move to install location.
-	binDir, mcpPath := installPaths(global)
+	binDir := installBinDir(global)
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return fmt.Errorf("creating bin dir: %w", err)
 	}
@@ -210,21 +218,20 @@ func runRemoteInstall(ref string, global bool) error {
 	}
 	fmt.Printf("Installed %s → %s\n", parsed.Agent, dst)
 
-	// Wire MCP.
+	// Wire MCP for target runtimes.
 	absDst, err := filepath.Abs(dst)
 	if err != nil {
 		return fmt.Errorf("resolving absolute path: %w", err)
 	}
-	entries := map[string]MCPServerEntry{
+	entries := map[string]runtimecfg.ServerEntry{
 		parsed.Agent: {
 			Command: absDst,
 			Args:    []string{"serve-mcp"},
 		},
 	}
-	if err := mergeMCPJSON(mcpPath, entries); err != nil {
-		return fmt.Errorf("updating %s: %w", mcpPath, err)
+	if err := mergeRuntimeConfigs(writers, global, entries); err != nil {
+		return err
 	}
-	fmt.Printf("Updated %s\n", mcpPath)
 
 	// Track in registry.
 	source := fmt.Sprintf("github.com/%s/%s/%s", parsed.Owner, parsed.Repo, parsed.Agent)
@@ -235,16 +242,34 @@ func runRemoteInstall(ref string, global bool) error {
 	return trackInstall(parsed.Agent, source, manifest.Version, absDst, scope)
 }
 
-func installPaths(global bool) (binDir, mcpPath string) {
+// installBinDir returns the binary install directory.
+// Binary location is agentfile-internal, independent of runtime.
+func installBinDir(global bool) string {
 	if global {
-		binDir = "/usr/local/bin"
-		home, _ := os.UserHomeDir()
-		mcpPath = filepath.Join(home, ".claude", "mcp.json")
-	} else {
-		binDir = filepath.Join(".agentfile", "bin")
-		mcpPath = ".mcp.json"
+		return "/usr/local/bin"
 	}
-	return
+	return filepath.Join(".agentfile", "bin")
+}
+
+// mergeRuntimeConfigs writes MCP server entries to all target runtime configs.
+func mergeRuntimeConfigs(writers []runtimecfg.ConfigWriter, global bool, entries map[string]runtimecfg.ServerEntry) error {
+	for _, w := range writers {
+		var cfgPath string
+		if global {
+			var err error
+			cfgPath, err = w.GlobalPath()
+			if err != nil {
+				return fmt.Errorf("resolving global path for %s: %w", w.Runtime(), err)
+			}
+		} else {
+			cfgPath = w.LocalPath()
+		}
+		if err := w.Merge(cfgPath, entries); err != nil {
+			return fmt.Errorf("updating %s for %s: %w", cfgPath, w.Runtime(), err)
+		}
+		fmt.Printf("Updated %s (%s)\n", cfgPath, w.Runtime())
+	}
+	return nil
 }
 
 func trackInstall(name, source, version, path, scope string) error {
